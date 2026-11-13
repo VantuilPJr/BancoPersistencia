@@ -37,3 +37,7 @@ target/
 *.db-wal
 *.db-shm
 *.db-journal
+
+# Materiais locais da atividade
+/ROTEIRO.md
+/Diagrams2.asta
