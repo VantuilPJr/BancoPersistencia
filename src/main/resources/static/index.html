@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sistema Bancário</title>
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #f2f4f8; color: #222; }
+  header { background: #12355b; color: #fff; padding: 14px 24px; font-size: 20px; }
+  main { max-width: 1100px; margin: 20px auto; padding: 0 16px; display: grid; gap: 16px;
+         grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  section { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px #0002; }
+  section.wide { grid-column: 1 / -1; }
+  h2 { margin: 0 0 10px; font-size: 16px; color: #12355b; }
+  label { display: block; font-size: 12px; margin-top: 8px; color: #555; }
+  input, select { width: 100%; padding: 7px; box-sizing: border-box; border: 1px solid #bbb; border-radius: 4px; }
+  button { margin-top: 12px; padding: 8px 14px; background: #1f6feb; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+  button.sec { background: #6b7280; }
+  pre { background: #0f172a; color: #d1fae5; padding: 10px; border-radius: 6px; overflow: auto; max-height: 260px; font-size: 12px; }
+  pre.err { color: #fecaca; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border-bottom: 1px solid #ddd; padding: 5px 6px; text-align: left; }
+  th { background: #eef2f7; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+<header>🏦 Sistema Bancário – Persistência com Spring + SQLite</header>
+<main>
+
+<section>
+  <h2>1. Cadastrar Cliente</h2>
+  <form onsubmit="return enviar(event,'/api/clientes',['nome','cpf'],'c_')">
+    <label>Nome</label><input id="c_nome" required>
+    <label>CPF (11 dígitos)</label><input id="c_cpf" required pattern="\d{11}">
+    <button>Salvar</button>
+  </form>
+</section>
+
+<section>
+  <h2>2. Criar Conta</h2>
+  <form onsubmit="return enviar(event,'/api/contas',['clienteId','agencia','numero','saldoInicial'],'ct_',['clienteId','saldoInicial'])">
+    <label>ID do cliente</label><input id="ct_clienteId" type="number" required>
+    <label>Agência</label><input id="ct_agencia" required>
+    <label>Número da conta</label><input id="ct_numero" required>
+    <label>Saldo inicial</label><input id="ct_saldoInicial" type="number" step="0.01" value="0">
+    <button>Salvar</button>
+  </form>
+</section>
+
+<section>
+  <h2>3. Cadastrar Boleto</h2>
+  <form onsubmit="return enviar(event,'/api/boletos',['codigoBarras','beneficiario','valor','vencimento'],'b_',['valor'])">
+    <label>Código de barras (44 a 48 dígitos)</label><input id="b_codigoBarras" required pattern="\d{44,48}">
+    <label>Beneficiário</label><input id="b_beneficiario" required>
+    <label>Valor</label><input id="b_valor" type="number" step="0.01" required>
+    <label>Vencimento</label><input id="b_vencimento" type="date">
+    <button>Salvar</button>
+  </form>
+</section>
+
+<section>
+  <h2>4. Transferência</h2>
+  <form onsubmit="return transferir(event)">
+    <label>Tipo</label>
+    <select id="t_tipo" onchange="camposTransf()">
+      <option value="pix">PIX</option><option value="ted">TED</option><option value="doc">DOC (agendada)</option>
+    </select>
+    <label>ID da conta de origem</label><input id="t_contaOrigemId" type="number" required>
+    <label>Valor</label><input id="t_valor" type="number" step="0.01" required>
+    <div id="t_pix">
+      <label>Chave PIX</label><input id="t_chavePix">
+      <label>Destinatário</label><input id="t_destinatario">
+    </div>
+    <div id="t_banco" class="hide">
+      <label>Banco destino</label><input id="t_bancoDestino">
+      <label>Agência destino</label><input id="t_agenciaDestino">
+      <label>Conta destino</label><input id="t_contaDestino">
+    </div>
+    <div id="t_cpf" class="hide">
+      <label>CPF destino</label><input id="t_cpfDestino">
+    </div>
+    <button>Transferir</button>
+  </form>
+  <label>Processar DOC agendado (ID da transferência)</label>
+  <input id="t_proc" type="number">
+  <button class="sec" onclick="processar()">Processar agora</button>
+</section>
+
+<section>
+  <h2>5. Pagamento</h2>
+  <form onsubmit="return pagar(event)">
+    <label>Tipo</label>
+    <select id="p_tipo" onchange="camposPag()">
+      <option value="boleto">Boleto</option><option value="pix">PIX</option><option value="saldo_em_conta">Saldo em conta</option>
+    </select>
+    <label>ID da conta pagadora</label><input id="p_contaId" type="number" required>
+    <div id="p_valorBox" class="hide"><label>Valor</label><input id="p_valor" type="number" step="0.01"></div>
+    <div id="p_boleto"><label>Código de barras</label><input id="p_codigoBarras"></div>
+    <div id="p_pix" class="hide"><label>Chave PIX ou QR Code</label><input id="p_chavePixOuQrCode"></div>
+    <div id="p_saldo" class="hide"><label>Número da conta destinatária</label><input id="p_destinatario"></div>
+    <button>Pagar</button>
+  </form>
+</section>
+
+<section>
+  <h2>Resultado da última operação</h2>
+  <pre id="resultado">—</pre>
+</section>
+
+<section class="wide">
+  <h2>Dados gravados no banco
+    <button class="sec" onclick="listar()" style="margin:0 0 0 10px">Atualizar</button></h2>
+  <h3>Clientes</h3><div id="l_clientes"></div>
+  <h3>Contas</h3><div id="l_contas"></div>
+  <h3>Boletos</h3><div id="l_boletos"></div>
+  <label>Histórico da conta (ID)</label>
+  <input id="h_conta" type="number" style="max-width:160px">
+  <button class="sec" onclick="historico()">Ver transferências e pagamentos</button>
+  <h3>Transferências</h3><div id="l_transf"></div>
+  <h3>Pagamentos</h3><div id="l_pag"></div>
+</section>
+
+</main>
+<script>
+const $ = id => document.getElementById(id);
+
+async function chamar(method, url, body) {
+  const r = await fetch(url, { method, headers: {'Content-Type': 'application/json'},
+                               body: body ? JSON.stringify(body) : undefined });
+  const txt = await r.text();
+  let dados; try { dados = JSON.parse(txt); } catch { dados = txt; }
+  const pre = $('resultado');
+  pre.className = r.ok ? '' : 'err';
+  pre.textContent = 'HTTP ' + r.status + '\n' + JSON.stringify(dados, null, 2);
+  listar();
+  return dados;
+}
+
+function montar(campos, prefixo, numericos = []) {
+  const o = {};
+  campos.forEach(c => {
+    const v = $(prefixo + c).value;
+    if (v === '') return;
+    o[c] = numericos.includes(c) ? Number(v) : v;
+  });
+  return o;
+}
+
+function enviar(e, url, campos, prefixo, numericos) {
+  e.preventDefault();
+  chamar('POST', url, montar(campos, prefixo, numericos));
+  return false;
+}
+
+function camposTransf() {
+  const t = $('t_tipo').value;
+  $('t_pix').classList.toggle('hide', t !== 'pix');
+  $('t_banco').classList.toggle('hide', t === 'pix');
+  $('t_cpf').classList.toggle('hide', t !== 'doc');
+}
+function transferir(e) {
+  e.preventDefault();
+  const tipo = $('t_tipo').value;
+  const campos = ['contaOrigemId','valor','chavePix','destinatario','bancoDestino','agenciaDestino','contaDestino','cpfDestino'];
+  const ativos = tipo === 'pix' ? ['contaOrigemId','valor','chavePix','destinatario']
+               : tipo === 'ted' ? ['contaOrigemId','valor','bancoDestino','agenciaDestino','contaDestino']
+               : campos.filter(c => !['chavePix','destinatario'].includes(c));
+  chamar('POST', '/api/transferencias/' + tipo, montar(ativos, 't_', ['contaOrigemId','valor']));
+  return false;
+}
+function processar() {
+  const id = $('t_proc').value;
+  if (id) chamar('POST', '/api/transferencias/' + id + '/processar');
+}
+
+function camposPag() {
+  const t = $('p_tipo').value;
+  $('p_boleto').classList.toggle('hide', t !== 'boleto');
+  $('p_pix').classList.toggle('hide', t !== 'pix');
+  $('p_saldo').classList.toggle('hide', t !== 'saldo_em_conta');
+  $('p_valorBox').classList.toggle('hide', t === 'boleto');
+}
+function pagar(e) {
+  e.preventDefault();
+  const tipo = $('p_tipo').value;
+  const ativos = tipo === 'boleto' ? ['contaId','codigoBarras']
+               : tipo === 'pix' ? ['contaId','valor','chavePixOuQrCode']
+               : ['contaId','valor','destinatario'];
+  chamar('POST', '/api/pagamentos/' + tipo, montar(ativos, 'p_', ['contaId','valor']));
+  return false;
+}
+
+function tabela(el, linhas) {
+  if (!linhas.length) { $(el).textContent = '(vazio)'; return; }
+  const cols = Object.keys(linhas[0]);
+  $(el).innerHTML = '<table><tr>' + cols.map(c => '<th>' + c + '</th>').join('') + '</tr>' +
+    linhas.map(l => '<tr>' + cols.map(c => '<td>' + (l[c] ?? '') + '</td>').join('') + '</tr>').join('') + '</table>';
+}
+async function get(url) { const r = await fetch(url); return r.ok ? r.json() : []; }
+async function listar() {
+  tabela('l_clientes', await get('/api/clientes'));
+  tabela('l_contas', await get('/api/contas'));
+  tabela('l_boletos', await get('/api/boletos'));
+  if ($('h_conta').value) historico();
+}
+async function historico() {
+  const id = $('h_conta').value; if (!id) return;
+  tabela('l_transf', await get('/api/transferencias/conta/' + id));
+  tabela('l_pag', await get('/api/pagamentos/conta/' + id));
+}
+camposTransf(); camposPag(); listar();
+</script>
+</body>
+</html>
